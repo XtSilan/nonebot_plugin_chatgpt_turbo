@@ -10,6 +10,7 @@ class Config(BaseModel, extra=Extra.ignore):
     enable_private_chat: bool = True   # 是否开启私聊对话
     merge_msg: bool = False  # 是否合并转发回复
     # chatgpt_turbo_public: bool = True  # 是否开启群聊对话
-
+    system_prompt: Optional[str] = ""  # （可选）系统提示词，用于设定机器人角色和行为
+    temperature: Optional[float] = 1.0  # （可选）温度参数，控制生成文本的随机性，范围一般为0.0-2.0，默认值1.0
 class ConfigError(Exception):
     pass

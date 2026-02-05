@@ -49,6 +49,8 @@ else:
     client = AsyncOpenAI(api_key=plugin_config.oneapi_key)
 
 model_id = plugin_config.oneapi_model
+system_prompt = plugin_config.system_prompt
+temperature = plugin_config.temperature
 
 # public = plugin_config.chatgpt_turbo_public
 session = {}
@@ -62,7 +64,12 @@ chat_request = on_command("", rule=to_me(), block=False, priority=99)
 # 清除历史记录
 clear_request = on_command("clear", block=True, priority=1)
 
-
+def get_system_message(session_id: str):
+    """获取系统消息，如果用户设置了系统提示词则使用用户的，否则不返回"""
+    if plugin_config.system_prompt:
+        return {"role": "system", "content": plugin_config.system_prompt}
+    else:
+        return None
 # 带记忆的聊天
 @chat_record.handle()
 async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
@@ -78,6 +85,10 @@ async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
     session_id = event.get_session_id()
     if session_id not in session:
         session[session_id] = []
+        # 如果配置了系统提示词，则添加到会话开头
+        system_msg = get_system_message(session_id)
+        if system_msg:
+            session[session_id].append(system_msg)
 
     if not img_url:
         try:
@@ -85,6 +96,7 @@ async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
             response = await client.chat.completions.create(
                 model=model_id,
                 messages=session[session_id],
+                temperature=temperature,
             )
         except Exception as error:
             await Text("报错：" + str(error)).finish(at_sender=True, reply=True)
@@ -121,7 +133,7 @@ async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
                 }
             )
             response = await client.chat.completions.create(
-                model=model_id, messages=session[session_id]
+                model=model_id, messages=session[session_id], temperature=temperature
             )
         except Exception as error:
             await Text("报错："+str(error)+"，很可能因为该模型不支持多模态").finish(at_sender=True, reply=True)
@@ -146,9 +158,17 @@ async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
 
     if not img_url:
         try:
+            # 构建消息列表，如果配置了系统提示词则添加
+            messages = []
+            system_msg = get_system_message(event.get_session_id())
+            if system_msg:
+                messages.append(system_msg)
+            messages.append({"role": "user", "content": content})
+
             response = await client.chat.completions.create(
                 model=model_id,
-                messages=[{"role": "user", "content": content}],
+                messages=messages,
+                temperature=temperature,
             )
         except Exception as error:
             await Text("报错：" + str(error)).finish(at_sender=True, reply=True)
@@ -169,22 +189,31 @@ async def _(bot: Bot, event: MessageEvent, msg: Message = CommandArg()):
         try:
             image_data = base64.b64encode(
                 httpx.get(img_url[0]).content).decode("utf-8")
+
+            # 构建消息列表，如果配置了系统提示词则添加
+            messages = []
+            system_msg = get_system_message(event.get_session_id())
+            if system_msg:
+                messages.append(system_msg)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": content},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_data}"
+                            },
+                        },
+                    ],
+                }
+            )
+
             response = await client.chat.completions.create(
                 model=model_id,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": content},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{image_data}"
-                                },
-                            },
-                        ],
-                    }
-                ],
+                messages=messages,
+                temperature=temperature,
             )
         except Exception as error:
             await Text("报错："+str(error)+"，很可能因为该模型不支持多模态").finish(at_sender=True, reply=True)
